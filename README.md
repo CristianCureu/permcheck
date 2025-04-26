@@ -1,6 +1,6 @@
 # Permcheck
 
-[![Go CI](https://github.com/cristiancureu/permcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/cristiancureu/permcheck/actions) [![Go Version](https://img.shields.io/badge/Go-1.22-blue)](https://golang.org/dl/)
+[![Go CI](https://github.com/cristiancureu/permcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/cristiancureu/permcheck/actions) [![Go Version](https://img.shields.io/badge/Go-1.24-blue)](https://golang.org/dl/)
 
 **Permcheck** is a lightweight CLI tool for scanning directories and identifying insecure file permissions.  
 It can optionally fix permissions automatically according to recommended security standards.

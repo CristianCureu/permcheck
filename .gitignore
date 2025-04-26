@@ -1,0 +1,21 @@
+# Binaries
+permcheck
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+
+# Go stuff
+bin/
+build/
+*.exe
+*.out
+*.test
+
+# Dependencies
+vendor/
+
+./mock_files

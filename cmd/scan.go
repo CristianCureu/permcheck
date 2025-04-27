@@ -13,13 +13,8 @@ func NewScanCmd(cfg *internal.Config) *cobra.Command {
 		Use:   "scan",
 		Short: "Scan a directory for insecure file permissions",
 		Run: func(cmd *cobra.Command, args []string) {
-			insecureTag := internal.DefaultInsecureTag
-			secureTag := internal.DefaultSecureTag
-
-			if cfg.IsTerminal {
-				insecureTag = internal.ColorInsecureTag
-				secureTag = internal.ColorSecureTag
-			}
+			insecureTag := internal.InsecureTag
+			secureTag := internal.SecureTag
 
 			cfg.InsecureTag = insecureTag
 			cfg.SecureTag = secureTag

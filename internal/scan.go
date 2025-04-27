@@ -3,13 +3,17 @@ package internal
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 func RunScan(args []string, cfg *Config) error {
 	start := time.Now()
+	cfg.InsecureTag = FormatTag(cfg.InsecureTag, ColorRed, cfg.ColorsEnabled)
+	cfg.SecureTag = FormatTag(cfg.SecureTag, ColorGreen, cfg.ColorsEnabled)
 	dir := "."
 	var printLock sync.Mutex
 
@@ -22,13 +26,19 @@ func RunScan(args []string, cfg *Config) error {
 	filePaths := make(chan FileTask)
 	var wg sync.WaitGroup
 
+	// counters
+	var filesScanned int64
+	var filesSecure int64
+	var filesInsecure int64
+
 	for i := 0; i < cfg.NumWorkers; i++ {
 		wg.Add(1)
 		// create goroutine
 		go func(id int) {
 			defer wg.Done()
 			for task := range filePaths {
-				processFile(task, cfg, id, &printLock)
+				scanned, secure, insecure := processFile(task, cfg, id, &printLock)
+				addCounters(&filesScanned, &filesSecure, &filesInsecure, scanned, secure, insecure)
 			}
 		}(i)
 	}
@@ -60,50 +70,83 @@ func RunScan(args []string, cfg *Config) error {
 	close(filePaths) // signal workers to stop
 	wg.Wait()        // block main from exiting too early, wait for all workers to finish
 
-	fmt.Printf("Scan completed in %s\n", time.Since(start))
+	fmt.Printf("\nScan completed in %s\n", time.Since(start))
+
+	fmt.Println("+----------------+--------+")
+	fmt.Println("|     Result     | Count  |")
+	fmt.Println("+----------------+--------+")
+
+	if !cfg.InsecureOnly {
+		fmt.Printf("| %s     | %6d |\n", FormatTag("[✓] Secure", ColorGreen, cfg.ColorsEnabled), filesSecure)
+	}
+
+	fmt.Printf("| %s   | %6d |\n", FormatTag("[!] Insecure", ColorRed, cfg.ColorsEnabled), filesInsecure)
+	fmt.Printf("| Total scanned  | %6d |\n", filesScanned)
+	fmt.Println("+----------------+--------+")
+
 	return nil
 }
 
-func processFile(task FileTask, cfg *Config, workerID int, printLock *sync.Mutex) {
+func processFile(task FileTask, cfg *Config, workerID int, printLock *sync.Mutex) (scanned, secure, insecure int64) {
 	path := task.Path
 	info := task.Info
 	mode := info.Mode().Perm()
-	safePerm, isSensitive := SensitiveFiles[info.Name()]
 
-	if isSensitive {
-		if mode != safePerm {
-			WithLock(printLock, func() {
-				fmt.Printf("Worker %d: %s Sensitive file %s has bad permissions: %04o (expected %04o)\n", workerID, cfg.InsecureTag, path, mode, safePerm)
-			})
+	scanned = 1
 
-			if err := FixPermissions(path, safePerm, cfg.FixMode); err != nil {
-				WithLock(printLock, func() {
-					fmt.Printf("%s Failed to fix permissions for %s: %v\n", cfg.InsecureTag, path, err)
-				})
-			}
-		} else if !cfg.InsecureOnly {
-			WithLock(printLock, func() {
-				fmt.Printf("Worker %d: %s Sensitive file %s is secure - %04o\n", workerID, cfg.SecureTag, path, mode)
-			})
+	var matched bool
+	var expectedPerm os.FileMode
+	var reason string
+
+	for _, rule := range Rules {
+		match, expected := rule.Match(info)
+		if match {
+			matched = true
+			expectedPerm = expected
+			reason = rule.Name
+			break // stop at first matching rule
 		}
-		return
 	}
 
-	// check if it is world writable
-	// 0o002 octal -> 000 000 010 binary -> ------w-
-	if mode&0o002 != 0 {
-		WithLock(printLock, func() {
-			fmt.Printf("Worker %d: %s Insecure permissions on %s - %04o\n", workerID, cfg.InsecureTag, path, mode)
-		})
+	if !matched {
+		// no rule matched
+		expectedPerm = mode
+		reason = "Generic file"
 
-		if err := FixPermissions(path, 0644, cfg.FixMode); err != nil {
-			WithLock(printLock, func() {
-				fmt.Printf("%s Failed to fix permissions for %s: %v\n", cfg.InsecureTag, path, err)
-			})
+		if mode&0o002 != 0 { // if it is world writable
+			expectedPerm = 0644
+			reason = "World-writable file"
 		}
+	}
+
+	if mode != expectedPerm {
+		insecure = 1
+		WithLock(printLock, func() {
+			fmt.Printf("Worker %d: %s %s: %s has bad permissions: %04o (expected %04o)\n",
+				workerID, cfg.InsecureTag, reason, path, mode, expectedPerm)
+		})
+		fixAndReport(path, expectedPerm, cfg, printLock)
 	} else if !cfg.InsecureOnly {
+		secure = 1
 		WithLock(printLock, func() {
-			fmt.Printf("Worker %d: %s %s - %04o\n", workerID, cfg.SecureTag, path, mode)
+			fmt.Printf("Worker %d: %s %s - %04o\n",
+				workerID, cfg.SecureTag, path, mode)
 		})
 	}
+
+	return
+}
+
+func fixAndReport(path string, desiredPerm os.FileMode, cfg *Config, printLock *sync.Mutex) {
+	if err := FixPermissions(path, desiredPerm, cfg.FixMode); err != nil {
+		WithLock(printLock, func() {
+			fmt.Printf("%s Failed to fix permissions for %s: %v\n", cfg.InsecureTag, path, err)
+		})
+	}
+}
+
+func addCounters(scannedTotal, secureTotal, insecureTotal *int64, scanned, secure, insecure int64) {
+	atomic.AddInt64(scannedTotal, scanned)
+	atomic.AddInt64(secureTotal, secure)
+	atomic.AddInt64(insecureTotal, insecure)
 }

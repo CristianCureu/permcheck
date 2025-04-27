@@ -18,3 +18,10 @@ func WithLock(lock *sync.Mutex, fn func()) {
 	defer lock.Unlock()
 	fn()
 }
+
+func FormatTag(tag string, color string, enableColor bool) string {
+	if enableColor {
+		return color + tag + ColorReset
+	}
+	return tag
+}

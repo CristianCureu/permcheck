@@ -24,8 +24,8 @@ func TestRunScan_FixInsecureFiles(t *testing.T) {
 		InsecureOnly: false,
 		NumWorkers:   1,
 		IsTerminal:   false,
-		InsecureTag:  DefaultInsecureTag,
-		SecureTag:    DefaultSecureTag,
+		InsecureTag:  InsecureTag,
+		SecureTag:    SecureTag,
 	}
 
 	err = RunScan([]string{tmpDir}, cfg)

@@ -11,12 +11,15 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "permcheck",
 	Short: "A CLI tool to audit file permissions",
-	Long:  `permcheck recursively scans a directory and flags files with insecure permissions.`,
+	Long:  "permcheck recursively scans a directory and flags files with insecure permissions.",
 }
 
 func Execute() error {
+	isTerminal := term.IsTerminal(int(os.Stdout.Fd()))
+
 	cfg := &internal.Config{
-		IsTerminal: term.IsTerminal(int(os.Stdout.Fd())),
+		IsTerminal:    isTerminal,
+		ColorsEnabled: isTerminal,
 	}
 
 	rootCmd.AddCommand(NewScanCmd(cfg))
